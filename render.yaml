@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: vapi-translator
+    env: node
+    plan: free
+    branch: main  # adjust if your default branch is different
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        required: true  # set the value in the Render Dashboard or as an environment group

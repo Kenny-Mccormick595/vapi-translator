@@ -9,4 +9,4 @@ services:
     autoDeploy: true
     envVars:
       - key: OPENAI_API_KEY
-        required: true  # set the value in the Render Dashboard or as an environment group
+        sync: false

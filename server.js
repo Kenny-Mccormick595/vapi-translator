@@ -8,11 +8,19 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Basic health and validation endpoints so external services (like Vapi) can verify the server URL
 app.get('/', (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).send('OK');
 });
 
 app.head('/', (_req, res) => {
   res.sendStatus(200);
+});
+
+app.options('/', (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
 });
 
 // Generic webhook receiver; responds 200 to acknowledge receipt during validation
@@ -26,16 +34,25 @@ app.post('/', (req, res) => {
   } catch (_) {
     // ignore logging errors
   }
+  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).json({ received: true });
 });
 
 // Dedicated webhook path in case you want to set a specific URL in Vapi
 app.get('/webhook', (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).send('OK');
 });
 
 app.head('/webhook', (_req, res) => {
   res.sendStatus(200);
+});
+
+app.options('/webhook', (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,HEAD,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
 });
 
 app.post('/webhook', (req, res) => {
@@ -45,6 +62,7 @@ app.post('/webhook', (req, res) => {
       console.log('Body:', JSON.stringify(req.body));
     }
   } catch (_) {}
+  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).json({ received: true });
 });
 

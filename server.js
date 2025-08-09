@@ -7,6 +7,48 @@ app.use(express.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Basic health and validation endpoints so external services (like Vapi) can verify the server URL
+app.get('/', (_req, res) => {
+  res.status(200).send('OK');
+});
+
+app.head('/', (_req, res) => {
+  res.sendStatus(200);
+});
+
+// Generic webhook receiver; responds 200 to acknowledge receipt during validation
+app.post('/', (req, res) => {
+  // Optionally log for debugging
+  try {
+    console.log('Inbound webhook received at / with headers:', req.headers);
+    if (req.body) {
+      console.log('Body:', JSON.stringify(req.body));
+    }
+  } catch (_) {
+    // ignore logging errors
+  }
+  res.status(200).json({ received: true });
+});
+
+// Dedicated webhook path in case you want to set a specific URL in Vapi
+app.get('/webhook', (_req, res) => {
+  res.status(200).send('OK');
+});
+
+app.head('/webhook', (_req, res) => {
+  res.sendStatus(200);
+});
+
+app.post('/webhook', (req, res) => {
+  try {
+    console.log('Inbound webhook received at /webhook with headers:', req.headers);
+    if (req.body) {
+      console.log('Body:', JSON.stringify(req.body));
+    }
+  } catch (_) {}
+  res.status(200).json({ received: true });
+});
+
 app.post('/translate', async (req, res) => {
   const { transcript } = req.body;
   if (!transcript) {

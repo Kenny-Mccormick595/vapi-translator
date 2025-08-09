@@ -6,6 +6,7 @@ services:
     branch: main  # adjust if your default branch is different
     buildCommand: "npm install"
     startCommand: "npm start"
+    healthCheckPath: "/"
     autoDeploy: true
     envVars:
       - key: OPENAI_API_KEY

@@ -3,7 +3,6 @@ const OpenAI = require('openai');
 require('dotenv').config();
 
 const app = express();
-app.use(express.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -49,7 +48,7 @@ app.post('/webhook', (req, res) => {
   res.status(200).json({ received: true });
 });
 
-app.post('/translate', async (req, res) => {
+app.post('/translate', express.json(), async (req, res) => {
   const { transcript } = req.body;
   if (!transcript) {
     return res.status(400).json({ error: 'Transcript is required' });

@@ -99,14 +99,30 @@ app.post('/webhook', (req, res) => {
 app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
   try {
     const payload = req.body;
+    const headerCallId = req.headers['x-call-id'] || 'n/a';
 
-    const handleEvent = (evt) => {
-      const type = evt?.type || 'unknown';
-      const callId = evt?.callId || evt?.call?.id || evt?.conversationId || 'n/a';
+    const handleEvent = (raw) => {
+      let evt = raw;
+      if (evt && typeof evt === 'object' && 'message' in evt) {
+        evt = evt.message;
+      }
+      if (typeof evt === 'string') {
+        try {
+          const parsed = JSON.parse(evt);
+          evt = parsed;
+        } catch (_) {
+          console.log(`[${headerCallId}] message(text):`, evt.substring(0, 200));
+          return;
+        }
+      }
+
+      const type = evt?.type || evt?.event || evt?.name || 'unknown';
+      const callId = evt?.callId || evt?.call?.id || raw?.callId || headerCallId || 'n/a';
+
       switch (type) {
         case 'transcript.delta':
         case 'transcript.final': {
-          const text = (evt.text || evt.transcript || '').trim();
+          const text = (evt.text || evt.transcript || evt.message || '').trim();
           if (!text) return;
           console.log(`[${callId}] ${type}: ${text}`);
           break;
@@ -116,11 +132,11 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
         case 'call.failed':
         case 'call.warning':
         case 'error': {
-          console.log(`[${callId}] ${type}:`, JSON.stringify(evt));
+          const brief = JSON.stringify(evt).slice(0, 500);
+          console.log(`[${callId}] ${type}:`, brief);
           break;
         }
         default: {
-          // Log succinctly for unknown types to avoid noisy logs
           const summary = { type, keys: Object.keys(evt || {}) };
           console.log(`[${callId}] event:`, summary);
         }
@@ -129,6 +145,8 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
 
     if (Array.isArray(payload)) {
       payload.forEach(handleEvent);
+    } else if (payload && typeof payload === 'object' && Array.isArray(payload.messages)) {
+      payload.messages.forEach(handleEvent);
     } else {
       handleEvent(payload);
     }

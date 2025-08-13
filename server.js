@@ -94,6 +94,52 @@ app.post('/webhook', (req, res) => {
   res.status(200).json({ received: true });
 });
 
+// JSON events endpoint for Vapi Server Messages (transcripts, call lifecycle, errors)
+// Point Vapi "Server URL" here when you enable events: https://YOUR-RENDER-URL/events
+app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const payload = req.body;
+
+    const handleEvent = (evt) => {
+      const type = evt?.type || 'unknown';
+      const callId = evt?.callId || evt?.call?.id || evt?.conversationId || 'n/a';
+      switch (type) {
+        case 'transcript.delta':
+        case 'transcript.final': {
+          const text = (evt.text || evt.transcript || '').trim();
+          if (!text) return;
+          console.log(`[${callId}] ${type}: ${text}`);
+          break;
+        }
+        case 'call.started':
+        case 'call.ended':
+        case 'call.failed':
+        case 'call.warning':
+        case 'error': {
+          console.log(`[${callId}] ${type}:`, JSON.stringify(evt));
+          break;
+        }
+        default: {
+          // Log succinctly for unknown types to avoid noisy logs
+          const summary = { type, keys: Object.keys(evt || {}) };
+          console.log(`[${callId}] event:`, summary);
+        }
+      }
+    };
+
+    if (Array.isArray(payload)) {
+      payload.forEach(handleEvent);
+    } else {
+      handleEvent(payload);
+    }
+
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error('Error handling /events payload:', error);
+    res.status(200).json({ ok: true });
+  }
+});
+
 app.post('/translate', express.json(), async (req, res) => {
   const { transcript } = req.body;
   if (!transcript) {

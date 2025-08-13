@@ -130,7 +130,19 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
         case 'speech-update': {
           const role = evt.role || 'unknown';
           const status = evt.status || 'n/a';
-          console.log(`[${callId}] speech-update: role=${role} status=${status}`);
+          let snippet = '';
+          const a = evt.artifact || {};
+          if (typeof a === 'string') {
+            snippet = a.slice(0, 200);
+          } else if (a) {
+            const cand = a.text || a.message || a.transcript || a.delta || a.caption || '';
+            if (typeof cand === 'string') snippet = cand.slice(0, 200);
+            else if (cand && typeof cand === 'object') {
+              const s = cand.text || cand.content || '';
+              if (typeof s === 'string') snippet = s.slice(0, 200);
+            }
+          }
+          console.log(`[${callId}] speech-update: role=${role} status=${status}${snippet ? ` | ${snippet}` : ''}`);
           break;
         }
         case 'status-update': {

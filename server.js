@@ -127,6 +127,45 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
           console.log(`[${callId}] ${type}: ${text}`);
           break;
         }
+        case 'speech-update': {
+          const role = evt.role || 'unknown';
+          const status = evt.status || 'n/a';
+          console.log(`[${callId}] speech-update: role=${role} status=${status}`);
+          break;
+        }
+        case 'status-update': {
+          const status = evt.status || 'n/a';
+          const endedReason = evt.endedReason || '';
+          console.log(`[${callId}] status-update: ${status}${endedReason ? ` (${endedReason})` : ''}`);
+          break;
+        }
+        case 'conversation-update': {
+          const msgs = evt.messages || evt.messagesOpenAIFormatted || [];
+          if (Array.isArray(msgs) && msgs.length) {
+            const last = msgs[msgs.length - 1];
+            const role = last.role || last.speaker || 'n/a';
+            let text = '';
+            if (typeof last.content === 'string') text = last.content;
+            else if (Array.isArray(last.content)) {
+              const part = last.content.find((c) => typeof c.text === 'string' || typeof c.content === 'string');
+              text = (part?.text || part?.content || '').toString();
+            } else if (last.text) text = last.text;
+            text = (text || '').trim();
+            const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+            console.log(`[${callId}] conversation-update: ${role}: ${snippet || '(no text)'}`);
+          } else {
+            console.log(`[${callId}] conversation-update: (no messages)`);
+          }
+          break;
+        }
+        case 'end-of-call-report': {
+          const summary = (evt.summary || '').toString();
+          const snippet = summary.length > 300 ? `${summary.slice(0, 300)}…` : summary;
+          const cost = evt.cost || evt.costs || evt.costBreakdown || null;
+          const durationSec = evt.durationSeconds || (typeof evt.durationMs === 'number' ? Math.round(evt.durationMs / 1000) : null);
+          console.log(`[${callId}] end-of-call: duration=${durationSec ?? 'n/a'}s, summary=${snippet || '(none)'}${cost ? `, cost=${JSON.stringify(cost)}` : ''}`);
+          break;
+        }
         case 'call.started':
         case 'call.ended':
         case 'call.failed':

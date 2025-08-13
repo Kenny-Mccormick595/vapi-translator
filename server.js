@@ -107,9 +107,18 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
     const payload = req.body;
     const headerCallId = req.headers['x-call-id'] || 'n/a';
 
+    // Per-call keypad buffer and idle-commit settings
+    let keypadState = app.get('keypadState');
+    if (!keypadState) {
+      keypadState = new Map();
+      app.set('keypadState', keypadState);
+    }
+    const DTMF_COMMIT_MS = Number(process.env.DTMF_COMMIT_MS || 0); // 0 disables idle commit
+    const DEFAULT_COUNTRY_PREFIX = process.env.DEFAULT_COUNTRY_PREFIX || '';
+
     // Keep a per-call keypad buffer to collect digits until '#'
-    const keypadState = app.get('keypadState') || new Map();
-    if (!app.get('keypadState')) app.set('keypadState', keypadState);
+    // ensure reference stays the same
+    keypadState = app.get('keypadState');
 
     async function startBridgedCall(targetE164) {
       const apiKey = process.env.VAPI_API_KEY;
@@ -151,6 +160,27 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
       const type = evt?.type || evt?.event || evt?.name || 'unknown';
       const callId = evt?.callId || evt?.call?.id || raw?.callId || headerCallId || 'n/a';
 
+      // keypad record and idle-commit helper per call
+      const rec = keypadState.get(callId) || { digits: '', timer: null };
+      function scheduleCommit() {
+        if (rec.timer) clearTimeout(rec.timer);
+        if (!DTMF_COMMIT_MS || DTMF_COMMIT_MS < 500) return;
+        rec.timer = setTimeout(() => {
+          const rawDigits = rec.digits;
+          keypadState.delete(callId);
+          if (!rawDigits) return;
+          let target = rawDigits;
+          if (!target.startsWith('+') && DEFAULT_COUNTRY_PREFIX) {
+            target = `${DEFAULT_COUNTRY_PREFIX}${target}`;
+          }
+          if (!/^\+\d{6,15}$/.test(target)) {
+            console.warn(`[${callId}] keypad idle-commit not E.164 (+country...): ${target}`);
+            return;
+          }
+          startBridgedCall(target);
+        }, DTMF_COMMIT_MS);
+      }
+
       const tryDigits = () => {
         let digits = '';
         if (typeof evt.digits === 'string') digits = evt.digits;
@@ -162,21 +192,28 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
         if (!digits && typeof evt.message === 'string' && /^[0-9#*]+$/.test(evt.message)) digits = evt.message;
         if (!digits) return;
 
-        const current = keypadState.get(callId) || '';
-        const next = (current + digits).slice(0, 64);
-        keypadState.set(callId, next);
-        console.log(`[${callId}] keypad: ${next}`);
+        rec.digits = (rec.digits + digits).slice(0, 64);
+        keypadState.set(callId, rec);
+        console.log(`[${callId}] keypad: ${rec.digits}`);
 
-        if (next.includes('#')) {
-          // Extract digits before '#', enforce E.164 (+countrycode...)
-          const target = next.split('#')[0];
+        // Commit when '#' is present
+        if (rec.digits.includes('#')) {
+          const rawTarget = rec.digits.split('#')[0];
           keypadState.delete(callId);
+          let target = rawTarget;
+          if (!target.startsWith('+') && DEFAULT_COUNTRY_PREFIX) {
+            target = `${DEFAULT_COUNTRY_PREFIX}${target}`;
+          }
           if (!/^\+\d{6,15}$/.test(target)) {
             console.warn(`[${callId}] keypad target not E.164 (+country...): ${target}`);
             return;
           }
           startBridgedCall(target);
+          return;
         }
+
+        // If no '#', use idle commit if configured
+        if (DTMF_COMMIT_MS >= 500) scheduleCommit();
       };
 
       switch (type) {

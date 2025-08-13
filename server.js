@@ -52,6 +52,11 @@ app.options('/', (_req, res) => {
   res.sendStatus(204);
 });
 
+// Health check endpoint for Render UI setting "/healthz"
+app.get('/healthz', (_req, res) => {
+  res.status(200).send('OK');
+});
+
 // Generic webhook receiver; responds 200 to acknowledge receipt during validation
 app.post('/', express.json({ limit: '2mb' }), (req, res) => {
   // Optionally log for debugging

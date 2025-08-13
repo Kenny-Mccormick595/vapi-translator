@@ -52,7 +52,7 @@ app.options('/', (_req, res) => {
 });
 
 // Generic webhook receiver; responds 200 to acknowledge receipt during validation
-app.post('/', (req, res) => {
+app.post('/', express.json({ limit: '2mb' }), (req, res) => {
   // Optionally log for debugging
   try {
     console.log('Inbound webhook received at / with headers:', req.headers);

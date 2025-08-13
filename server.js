@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const axios = require('axios');
 const { SpeechClient } = require('@google-cloud/speech');
 const OpenAI = require('openai');
 require('dotenv').config();
@@ -101,6 +102,32 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
     const payload = req.body;
     const headerCallId = req.headers['x-call-id'] || 'n/a';
 
+    // Keep a per-call keypad buffer to collect digits until '#'
+    const keypadState = app.get('keypadState') || new Map();
+    if (!app.get('keypadState')) app.set('keypadState', keypadState);
+
+    async function startBridgedCall(targetE164) {
+      const apiKey = process.env.VAPI_API_KEY;
+      const assistantId = process.env.VAPI_ASSISTANT_ID;
+      const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
+      const myNumber = process.env.MY_NUMBER;
+      if (!apiKey || !assistantId || !phoneNumberId || !myNumber) {
+        console.warn('Missing env VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID, or MY_NUMBER');
+        return;
+      }
+      try {
+        const resp = await axios.post('https://api.vapi.ai/calls', {
+          assistantId,
+          phoneNumberId,
+          customer: { number: myNumber },
+          assistantOverrides: { forwardingPhoneNumber: targetE164 }
+        }, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 10000 });
+        console.log(`Started bridged call to ${targetE164}:`, resp.data?.id || 'ok');
+      } catch (err) {
+        console.error('Failed to start bridged call:', err.response?.status, err.response?.data || err.message);
+      }
+    }
+
     const handleEvent = (raw) => {
       let evt = raw;
       if (evt && typeof evt === 'object' && 'message' in evt) {
@@ -119,12 +146,46 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
       const type = evt?.type || evt?.event || evt?.name || 'unknown';
       const callId = evt?.callId || evt?.call?.id || raw?.callId || headerCallId || 'n/a';
 
+      const tryDigits = () => {
+        let digits = '';
+        if (typeof evt.digits === 'string') digits = evt.digits;
+        else if (typeof evt.keypad === 'string') digits = evt.keypad;
+        else if (evt.artifact && typeof evt.artifact === 'object') {
+          const cand = evt.artifact.digits || evt.artifact.keypad || '';
+          if (typeof cand === 'string') digits = cand;
+        }
+        if (!digits && typeof evt.message === 'string' && /^[0-9#*]+$/.test(evt.message)) digits = evt.message;
+        if (!digits) return;
+
+        const current = keypadState.get(callId) || '';
+        const next = (current + digits).slice(0, 64);
+        keypadState.set(callId, next);
+        console.log(`[${callId}] keypad: ${next}`);
+
+        if (next.includes('#')) {
+          // Extract digits before '#', enforce E.164 (+countrycode...)
+          const target = next.split('#')[0];
+          keypadState.delete(callId);
+          if (!/^\+\d{6,15}$/.test(target)) {
+            console.warn(`[${callId}] keypad target not E.164 (+country...): ${target}`);
+            return;
+          }
+          startBridgedCall(target);
+        }
+      };
+
       switch (type) {
         case 'transcript.delta':
         case 'transcript.final': {
           const text = (evt.text || evt.transcript || evt.message || '').trim();
           if (!text) return;
           console.log(`[${callId}] ${type}: ${text}`);
+          break;
+        }
+        case 'keypad.input':
+        case 'dtmf.input':
+        case 'digits.input': {
+          tryDigits();
           break;
         }
         case 'speech-update': {
@@ -143,6 +204,7 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
             }
           }
           console.log(`[${callId}] speech-update: role=${role} status=${status}${snippet ? ` | ${snippet}` : ''}`);
+          if (role === 'user') tryDigits();
           break;
         }
         case 'status-update': {

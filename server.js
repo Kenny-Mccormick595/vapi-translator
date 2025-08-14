@@ -10,6 +10,7 @@ const app = express();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const VAPI_API_BASE = process.env.VAPI_API_BASE || '';
 
 // Google Cloud Speech-to-Text client (streaming, Hebrew)
 // Ensure env vars are set: GOOGLE_PROJECT_ID, GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY
@@ -33,6 +34,31 @@ async function translateToEnglish(text) {
     ],
   });
   return (completion.choices?.[0]?.message?.content || '').trim();
+}
+
+// Utility: POST to Vapi API with base fallbacks; returns axios response or throws last error
+async function vapiPost(path, data, headers = {}) {
+  const apiKey = process.env.VAPI_API_KEY;
+  const commonHeaders = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...headers };
+  const bases = [];
+  if (VAPI_API_BASE) bases.push(VAPI_API_BASE.replace(/\/$/, ''));
+  bases.push('https://api.vapi.ai/v1', 'https://api.vapi.ai');
+  let lastErr;
+  for (const base of bases) {
+    const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+    try {
+      const resp = await require('axios').post(url, data, { headers: commonHeaders, timeout: 10000 });
+      return resp;
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 404) {
+        lastErr = err;
+        continue; // try next base on 404
+      }
+      throw err; // other errors bubble up immediately
+    }
+  }
+  throw lastErr || new Error('All Vapi API base URLs failed');
 }
 
 // Basic health and validation endpoints so external services (like Vapi) can verify the server URL
@@ -130,12 +156,12 @@ app.post('/events', express.json({ limit: '2mb' }), async (req, res) => {
         return;
       }
       try {
-        const resp = await axios.post('https://api.vapi.ai/calls', {
+        const resp = await vapiPost('/calls', {
           assistantId,
           phoneNumberId,
           customer: { number: myNumber },
           assistantOverrides: { forwardingPhoneNumber: targetE164 }
-        }, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 10000 });
+        });
         console.log(`Started bridged call to ${targetE164}:`, resp.data?.id || 'ok');
       } catch (err) {
         console.error('Failed to start bridged call:', err.response?.status, err.response?.data || err.message);
@@ -488,13 +514,12 @@ app.post('/bridge', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'number must be E.164 (+country...digits)' });
     }
 
-    const axios = require('axios');
-    const resp = await axios.post('https://api.vapi.ai/calls', {
+    const resp = await vapiPost('/calls', {
       assistantId,
       phoneNumberId,
       customer: { number: myNumber },
       assistantOverrides: { forwardingPhoneNumber: target },
-    }, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 10000 });
+    });
 
     return res.status(200).json({ ok: true, callId: resp.data?.id || null, target });
   } catch (error) {

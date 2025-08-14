@@ -584,7 +584,11 @@ app.post('/bridge', express.json(), async (req, res) => {
     const resp = await vapiCreateCall({
       assistantId,
       phoneNumberId,
+      // Call you (MY_NUMBER) first → you must answer; then Vapi should forward to target
       customer: { number: myNumber },
+      // Some tenants expect top-level forwardingPhoneNumber instead of assistantOverrides
+      forwardingPhoneNumber: target,
+      // Also include inside overrides for compatibility
       assistantOverrides: { forwardingPhoneNumber: target },
     });
 

@@ -63,6 +63,12 @@ async function vapiPost(path, data, headers = {}) {
 
 // Try multiple common create-call endpoint paths
 async function vapiCreateCall(payload) {
+  // If fully specified URL is provided, use it directly
+  const explicitUrl = process.env.VAPI_CREATE_CALL_URL && process.env.VAPI_CREATE_CALL_URL.trim();
+  if (explicitUrl) {
+    console.log(`Using explicit VAPI_CREATE_CALL_URL: ${explicitUrl}`);
+    return vapiPost(explicitUrl, payload);
+  }
   const candidates = [
     '/v1/calls',
     '/calls',

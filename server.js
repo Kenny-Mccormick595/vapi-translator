@@ -61,6 +61,33 @@ async function vapiPost(path, data, headers = {}) {
   throw lastErr || new Error('All Vapi API base URLs failed');
 }
 
+// Try multiple common create-call endpoint paths
+async function vapiCreateCall(payload) {
+  const candidates = [
+    '/v1/calls',
+    '/calls',
+    '/v1/phone-calls',
+    '/phone-calls',
+    '/v1/calls/start',
+    '/calls/start',
+  ];
+  let lastErr;
+  for (const p of candidates) {
+    try {
+      const resp = await vapiPost(p, payload);
+      console.log(`Create call succeeded via path: ${p}`);
+      return resp;
+    } catch (err) {
+      if (err.response?.status === 404) {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error('No known create-call endpoint matched');
+}
+
 // Basic health and validation endpoints so external services (like Vapi) can verify the server URL
 app.get('/', (_req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
@@ -514,7 +541,7 @@ app.post('/bridge', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'number must be E.164 (+country...digits)' });
     }
 
-    const resp = await vapiPost('/calls', {
+    const resp = await vapiCreateCall({
       assistantId,
       phoneNumberId,
       customer: { number: myNumber },

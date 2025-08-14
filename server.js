@@ -81,6 +81,9 @@ async function vapiCreateCall(payload) {
     // Most likely
     '/v2/calls',
     '/v1/calls',
+    '/v2/call/phone',
+    '/v1/call/phone',
+    '/call/phone',
     // Older/alt
     '/calls',
     '/v2/phone-calls',

@@ -42,7 +42,13 @@ async function vapiPost(path, data, headers = {}) {
   const commonHeaders = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...headers };
   // If caller passed a full URL, use it directly
   if (/^https?:\/\//i.test(path)) {
-    return axios.post(path, data, { headers: commonHeaders, timeout: 10000 });
+    try {
+      return await axios.post(path, data, { headers: commonHeaders, timeout: 10000 });
+    } catch (err) {
+      const status = err.response?.status;
+      console.error('Vapi POST failed', { url: path, status, data: err.response?.data || err.message });
+      throw err;
+    }
   }
   const bases = [];
   if (VAPI_API_BASE) bases.push(VAPI_API_BASE.replace(/\/$/, ''));
@@ -56,6 +62,7 @@ async function vapiPost(path, data, headers = {}) {
     } catch (err) {
       const status = err.response?.status;
       if (status === 404) {
+        console.warn('Vapi POST 404', { url });
         lastErr = err;
         continue; // try next base on 404
       }
@@ -73,13 +80,20 @@ async function vapiCreateCall(payload) {
     console.log(`Using explicit VAPI_CREATE_CALL_URL: ${explicitUrl}`);
     return vapiPost(explicitUrl, payload);
   }
+  const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
   const candidates = [
+    '/v2/calls',
+    '/v2/phone-calls',
     '/v1/calls',
     '/calls',
     '/v1/phone-calls',
     '/phone-calls',
     '/v1/calls/start',
     '/calls/start',
+    ...(phoneNumberId ? [
+      `/v1/phone-numbers/${phoneNumberId}/calls`,
+      `/phone-numbers/${phoneNumberId}/calls`,
+    ] : []),
   ];
   let lastErr;
   for (const p of candidates) {

@@ -466,5 +466,44 @@ app.post('/vapi/webhook', express.json(), async (req, res) => {
   }
 });
 
+// Manual bridge trigger: POST /bridge { number: "+E164" }
+// Use this if your Vapi UI doesn't emit keypad events to /events
+app.post('/bridge', express.json(), async (req, res) => {
+  try {
+    const apiKey = process.env.VAPI_API_KEY;
+    const assistantId = process.env.VAPI_ASSISTANT_ID;
+    const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
+    const myNumber = process.env.MY_NUMBER;
+    const DEFAULT_COUNTRY_PREFIX = process.env.DEFAULT_COUNTRY_PREFIX || '';
+    if (!apiKey || !assistantId || !phoneNumberId || !myNumber) {
+      return res.status(400).json({ error: 'Missing env VAPI_API_KEY/VAPI_ASSISTANT_ID/VAPI_PHONE_NUMBER_ID/MY_NUMBER' });
+    }
+
+    let target = (req.body?.number || '').toString().trim();
+    if (!target) return res.status(400).json({ error: 'number is required' });
+    if (!target.startsWith('+') && DEFAULT_COUNTRY_PREFIX) {
+      target = `${DEFAULT_COUNTRY_PREFIX}${target}`;
+    }
+    if (!/^\+\d{6,15}$/.test(target)) {
+      return res.status(400).json({ error: 'number must be E.164 (+country...digits)' });
+    }
+
+    const axios = require('axios');
+    const resp = await axios.post('https://api.vapi.ai/calls', {
+      assistantId,
+      phoneNumberId,
+      customer: { number: myNumber },
+      assistantOverrides: { forwardingPhoneNumber: target },
+    }, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 10000 });
+
+    return res.status(200).json({ ok: true, callId: resp.data?.id || null, target });
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const data = error.response?.data || { error: error.message };
+    console.error('POST /bridge failed:', status, data);
+    return res.status(200).json({ ok: false, status, error: data });
+  }
+});
+
 const port = process.env.PORT || 3000;
 server.listen(port, () => console.log(`Server running on port ${port}`));

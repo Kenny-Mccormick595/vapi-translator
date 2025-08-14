@@ -76,26 +76,39 @@ async function vapiPost(path, data, headers = {}) {
 async function vapiCreateCall(payload) {
   // If fully specified URL is provided, use it directly
   const explicitUrl = process.env.VAPI_CREATE_CALL_URL && process.env.VAPI_CREATE_CALL_URL.trim();
-  if (explicitUrl) {
-    console.log(`Using explicit VAPI_CREATE_CALL_URL: ${explicitUrl}`);
-    return vapiPost(explicitUrl, payload);
-  }
   const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
   const candidates = [
+    // Most likely
     '/v2/calls',
-    '/v2/phone-calls',
     '/v1/calls',
+    // Older/alt
     '/calls',
+    '/v2/phone-calls',
     '/v1/phone-calls',
     '/phone-calls',
     '/v1/calls/start',
     '/calls/start',
+    // Phone-number scoped
     ...(phoneNumberId ? [
       `/v1/phone-numbers/${phoneNumberId}/calls`,
       `/phone-numbers/${phoneNumberId}/calls`,
     ] : []),
+    // Other possible names
+    '/v1/assistant-calls',
+    '/assistant-calls',
+    '/v1/outbound-calls',
+    '/outbound-calls',
   ];
   let lastErr;
+  if (explicitUrl) {
+    try {
+      console.log(`Trying explicit VAPI_CREATE_CALL_URL: ${explicitUrl}`);
+      return await vapiPost(explicitUrl, payload);
+    } catch (err) {
+      if (err.response?.status !== 404) throw err;
+      lastErr = err; // fall through to candidates
+    }
+  }
   for (const p of candidates) {
     try {
       const resp = await vapiPost(p, payload);

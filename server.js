@@ -559,26 +559,38 @@ app.post('/vapi/webhook', express.json(), async (req, res) => {
   }
 });
 
-// Manual bridge trigger: POST /bridge { number: "+E164" }
+// Manual bridge trigger: POST /bridge { number: "+E164", customerNumber?: "+E164" }
 // Use this if your Vapi UI doesn't emit keypad events to /events
 app.post('/bridge', express.json(), async (req, res) => {
   try {
     const apiKey = process.env.VAPI_API_KEY;
     const assistantId = process.env.VAPI_ASSISTANT_ID;
     const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
-    const myNumber = process.env.MY_NUMBER;
+    const myNumberEnv = process.env.MY_NUMBER;
     const DEFAULT_COUNTRY_PREFIX = process.env.DEFAULT_COUNTRY_PREFIX || '';
-    if (!apiKey || !assistantId || !phoneNumberId || !myNumber) {
+    if (!apiKey || !assistantId || !phoneNumberId || !myNumberEnv) {
       return res.status(400).json({ error: 'Missing env VAPI_API_KEY/VAPI_ASSISTANT_ID/VAPI_PHONE_NUMBER_ID/MY_NUMBER' });
     }
 
     let target = (req.body?.number || '').toString().trim();
+    let customerNumber = (req.body?.customerNumber || '').toString().trim();
     if (!target) return res.status(400).json({ error: 'number is required' });
+
+    // Prefer live caller if workflow passes it; else env MY_NUMBER
+    let myNumber = customerNumber || myNumberEnv;
+
     if (!target.startsWith('+') && DEFAULT_COUNTRY_PREFIX) {
       target = `${DEFAULT_COUNTRY_PREFIX}${target}`;
     }
     if (!/^\+\d{6,15}$/.test(target)) {
       return res.status(400).json({ error: 'number must be E.164 (+country...digits)' });
+    }
+
+    if (myNumber && !myNumber.startsWith('+') && DEFAULT_COUNTRY_PREFIX) {
+      myNumber = `${DEFAULT_COUNTRY_PREFIX}${myNumber}`;
+    }
+    if (!/^\+\d{6,15}$/.test(myNumber)) {
+      return res.status(400).json({ error: 'customerNumber/MY_NUMBER must be E.164 (+country...digits)' });
     }
 
     const resp = await vapiCreateCall({
@@ -588,7 +600,7 @@ app.post('/bridge', express.json(), async (req, res) => {
       assistantOverrides: { forwardingPhoneNumber: target },
     });
 
-    return res.status(200).json({ ok: true, callId: resp.data?.id || null, target });
+    return res.status(200).json({ ok: true, callId: resp.data?.id || null, target, customer: myNumber });
   } catch (error) {
     const status = error.response?.status || 500;
     const data = error.response?.data || { error: error.message };

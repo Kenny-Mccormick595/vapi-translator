@@ -40,6 +40,10 @@ async function translateToEnglish(text) {
 async function vapiPost(path, data, headers = {}) {
   const apiKey = process.env.VAPI_API_KEY;
   const commonHeaders = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', ...headers };
+  // If caller passed a full URL, use it directly
+  if (/^https?:\/\//i.test(path)) {
+    return axios.post(path, data, { headers: commonHeaders, timeout: 10000 });
+  }
   const bases = [];
   if (VAPI_API_BASE) bases.push(VAPI_API_BASE.replace(/\/$/, ''));
   bases.push('https://api.vapi.ai/v1', 'https://api.vapi.ai');

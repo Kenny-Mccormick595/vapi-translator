@@ -1,11 +1,12 @@
 {
   "name": "vapi-translator",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "Realtime translation server with VAD floor control",
+  "main": "dist/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts"
   },
   "keywords": [],
   "author": "",
@@ -15,11 +16,17 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@google-cloud/speech": "^6.6.0",
     "axios": "^1.7.7",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "openai": "^5.12.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "@types/ws": "^8.5.10",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
   }
 }

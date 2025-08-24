@@ -78,10 +78,11 @@ async function handleYourPcm(pcm: Int16Array) {
       const translated = await session.translator.translate(res.text);
       if (translated) {
         const wav = await session.tts.synthesize(translated);
-        if (session.them?.ws.readyState === session.them.ws.OPEN) {
+        const themWs = session.them?.ws;
+        if (themWs && themWs.readyState === themWs.OPEN) {
           const header = Buffer.from(JSON.stringify({ type: 'tts', sampleRate: SAMPLE_RATE }));
           const sep = Buffer.from('\n');
-          session.them.ws.send(Buffer.concat([header, sep, wav]));
+          themWs.send(Buffer.concat([header, sep, wav]));
         }
       }
     }
@@ -98,10 +99,11 @@ function handleTheirPcm(pcm: Int16Array) {
   if (speaking && session.floor !== Floor.THEM_SPEAKING) switchToThem();
   if (!speaking && session.vadThem.shouldRelease() && session.floor === Floor.THEM_SPEAKING) session.floor = Floor.IDLE;
   if (speaking) {
-    if (session.you?.ws.readyState === session.you.ws.OPEN) {
+    const youWs = session.you?.ws;
+    if (youWs && youWs.readyState === youWs.OPEN) {
       const header = JSON.stringify({ type: 'passthrough', sampleRate: SAMPLE_RATE });
-      session.you.ws.send(header + '\n');
-      session.you.ws.send(Buffer.from(pcm.buffer));
+      youWs.send(header + '\n');
+      youWs.send(Buffer.from(pcm.buffer));
     }
   }
 }

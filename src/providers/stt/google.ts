@@ -1,4 +1,5 @@
 import { SpeechClient } from '@google-cloud/speech';
+import { Duplex } from 'stream';
 
 export interface GoogleSTTConfig {
   projectId?: string;
@@ -11,8 +12,7 @@ export interface GoogleSTTConfig {
 export class GoogleStreamingSTT {
   private client: SpeechClient;
   private request: any;
-  private stream: any;
-  private buffers: Int16Array[] = [];
+  private stream?: Duplex;
 
   constructor(cfg: GoogleSTTConfig) {
     const credentials = (cfg.clientEmail && cfg.privateKey)
@@ -30,31 +30,64 @@ export class GoogleStreamingSTT {
       },
       interimResults: false,
     };
-    this.stream = this.client.streamingRecognize(this.request);
+  }
+
+  private ensureStream() {
+    if (this.stream) return;
+    const s = this.client.streamingRecognize(this.request);
+    s.on('error', (err: any) => {
+      // Swallow timeouts to avoid crashing; recreate on next write
+      console.error('Google STT stream error:', err?.code || '', err?.details || err?.message || err);
+      this.stream = undefined;
+    });
+    this.stream = s as unknown as Duplex;
   }
 
   write(pcm: Int16Array) {
-    this.stream.write({ audioContent: Buffer.from(pcm.buffer) });
+    this.ensureStream();
+    if (!this.stream) return;
+    try {
+      this.stream.write({ audioContent: Buffer.from(pcm.buffer) });
+    } catch (e) {
+      console.error('Google STT write error', e);
+      this.stream = undefined;
+    }
   }
 
   async flush(): Promise<{ text: string; isFinal: boolean } | null> {
-    // For streaming API, we resolve on the next 'data' event; here we set up a one-shot promise
+    const s = this.stream;
+    if (!s) return null;
     return new Promise((resolve) => {
+      let done = false;
+      const cleanup = () => {
+        s.removeListener('data', onData);
+        s.removeListener('error', onError);
+        s.removeListener('end', onEnd);
+      };
+      const finish = (val: any) => { if (done) return; done = true; cleanup(); resolve(val); };
+
       const onData = (data: any) => {
         try {
           const result = data.results?.[0];
           const alt = result?.alternatives?.[0];
           const text = (alt?.transcript || '').trim();
-          this.stream.removeListener('data', onData);
-          resolve(text ? { text, isFinal: !!result?.isFinal } : null);
+          finish(text ? { text, isFinal: !!result?.isFinal } : null);
         } catch {
-          this.stream.removeListener('data', onData);
-          resolve(null);
+          finish(null);
         }
       };
-      this.stream.on('data', onData);
-      // push a zero-length to force flush boundary
-      this.stream.write({ audioContent: Buffer.alloc(0) });
+      const onError = (_err: any) => finish(null);
+      const onEnd = () => finish(null);
+
+      s.once('data', onData);
+      s.once('error', onError);
+      s.once('end', onEnd);
+
+      try { s.end(); } catch {}
+      this.stream = undefined;
+
+      // Hard timeout so we never hang if Google returns nothing
+      setTimeout(() => finish(null), 4000).unref?.();
     });
   }
 }

@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
+import path from 'path';
 import { EnergyVAD, Floor } from './audio/vad';
 import { GoogleStreamingSTT } from './providers/stt/google';
 import { OpenAITranslator } from './providers/translate/openai';
@@ -23,6 +24,8 @@ const SAMPLE_RATE = 16000; // Hz
 
 const app = express();
 app.get('/healthz', (_req, res) => res.status(200).send('OK'));
+app.use(express.static(path.join(process.cwd(), 'public')));
+app.get('/test.html', (_req, res) => res.sendFile(path.join(process.cwd(), 'public', 'test.html')));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
